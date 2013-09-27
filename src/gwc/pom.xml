@@ -42,6 +42,7 @@
     <dependency>
       <groupId>org.geowebcache</groupId>
       <artifactId>gwc-core</artifactId>
+      <version>1.6-SQLITE</version>
     </dependency>
     <dependency>
       <groupId>org.geowebcache</groupId>
