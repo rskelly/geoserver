@@ -401,6 +401,10 @@ followLine
 
 The ``followLine`` option forces a label to follow the curve of the line. To use this option add the following to the ``<TextSymbolizer>``.
 
+.. note:: **Straight Lines**
+
+  You don't need to use followLine for straight lines. GeoServer will automatically follow the orientation of the line. However in this case ``followLine`` can be used to ensure the text isn't rendered if longer than the line.
+
 .. code-block:: xml
   
   <VendorOption name="followLine">true</VendorOption>  
@@ -578,9 +582,8 @@ If this option is used the ``graphic-margin`` option may also be specified.
      
 .. cssclass:: no-border
 
-   =============================================  ================================================
-   .. figure:: img/label_graphic-resize_none.png  .. figure:: img/label_graphic-resize_stretch.png
-   =============================================  ================================================
+   .. figure:: img/label_graphic-resize_none.png  
+   .. figure:: img/label_graphic-resize_stretch.png
   
 *Labeling with a Graphic Mark "square" - L) at native size; R) with "graphic-resize"=stretch and "graphic-margin"=3* 
      
@@ -596,4 +599,3 @@ when the ``graphic-resize`` option is specified.
 
   <VendorOption name="graphic-margin">margin</VendorOption>
 
-     

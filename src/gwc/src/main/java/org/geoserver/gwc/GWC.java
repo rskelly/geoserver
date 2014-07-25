@@ -53,13 +53,22 @@ import org.geoserver.ows.Dispatcher;
 import org.geoserver.ows.Response;
 import org.geoserver.platform.GeoServerExtensions;
 import org.geoserver.platform.Operation;
+import org.geoserver.security.CoverageAccessLimits;
 import org.geoserver.security.GeoServerSecurityManager;
+import org.geoserver.security.AccessLimits;
+import org.geoserver.security.DataAccessLimits;
+import org.geoserver.security.WMSAccessLimits;
+import org.geoserver.security.WrapperPolicy;
+import org.geoserver.security.decorators.SecuredLayerInfo;
 import org.geoserver.wms.GetMapRequest;
 import org.geoserver.wms.WMS;
 import org.geoserver.wms.map.RenderedImageMap;
+import org.opengis.filter.Filter;
+import org.geotools.filter.visitor.ExtractBoundsFilterVisitor;
 import org.geotools.geometry.GeneralEnvelope;
 import org.geotools.geometry.jts.JTS;
 import org.geotools.geometry.jts.ReferencedEnvelope;
+import org.geotools.ows.ServiceException;
 import org.geotools.referencing.CRS;
 import org.geotools.referencing.CRS.AxisOrder;
 import org.geotools.util.logging.Logging;
@@ -138,6 +147,7 @@ import com.vividsolutions.jts.geom.Polygon;
 public class GWC implements DisposableBean, InitializingBean, ApplicationContextAware {
 
     private static final String GLOBAL_LOCK_KEY = "global";
+    public static final String WORKSPACE_PARAM = "WORKSPACE";
 
     /**
      * @see #get()
@@ -985,6 +995,21 @@ public class GWC implements DisposableBean, InitializingBean, ApplicationContext
         DiskQuotaMonitor diskQuotaMonitor = getDiskQuotaMonitor();
         return diskQuotaMonitor.isEnabled();
     }
+    
+    /**
+     * Returns whether the disk quota module is enabled at all.
+     * <p>
+     * If not, none of the other diskquota related methods should be even called. The disk quota
+     * module may have been completely disabled through the {@code GWC_DISKQUOTA_DISABLED=true}
+     * environment variable
+     * </p>
+     * 
+     * @return whether the disk quota module is available at all.
+     */
+    public boolean isDiskQuotaEnabled() {
+        DiskQuotaMonitor diskQuotaMonitor = getDiskQuotaMonitor();
+        return diskQuotaMonitor.getConfig().isEnabled();
+    }
 
     /**
      * @return the current DiskQuota configuration or {@code null} if the disk quota module has been
@@ -1131,13 +1156,42 @@ public class GWC implements DisposableBean, InitializingBean, ApplicationContext
      */
     public Resource dispatchOwsRequest(final Map<String, String> params, Cookie[] cookies)
             throws Exception {
-
-        FakeHttpServletRequest req = new FakeHttpServletRequest(params, cookies);
+        
+        // If the WORKSPACE parameter is set, remove it and use it to set the workspace of the request
+        String workspace = params.remove(WORKSPACE_PARAM);
+        
+        FakeHttpServletRequest req = new FakeHttpServletRequest(params, cookies, workspace);
         FakeHttpServletResponse resp = new FakeHttpServletResponse();
 
         owsDispatcher.handleRequest(req, resp);
         return new ByteArrayResource(resp.getBytes());
     }
+    
+    public void proxyOwsRequest(ConveyorTile tile) throws Exception {
+        HttpServletRequest actualRequest = tile.servletReq;
+        
+        // get the param map and force service to be WMS if missing
+        Map<String, String> parameterMap = new HashMap<String, String>();
+        Map<String, String[]> params = actualRequest.getParameterMap();
+        boolean hasService = false;
+        for (Map.Entry<String, String[]> param: params.entrySet()) {
+            String key = param.getKey();
+            String value = param.getValue()[0];
+            parameterMap.put(key, value);
+            if("service".equalsIgnoreCase(key) && (value == null || value.isEmpty() || !"WMS".equalsIgnoreCase(value))) {
+                throw new GeoWebCacheException("Failed to cascade request, service should be WMS but it was: '" + value + "'");
+            }
+        }
+        if(!hasService) {
+            parameterMap.put("service", "WMS");
+        }
+        
+        // cascade
+        Cookie[] cookies = actualRequest.getCookies();
+        FakeHttpServletRequest request = new FakeHttpServletRequest(parameterMap, cookies);
+        owsDispatcher.handleRequest(request, tile.servletResp);
+    }
+
 
     public GridSetBroker getGridSetBroker() {
         return gridSetBroker;
@@ -1478,11 +1532,15 @@ public class GWC implements DisposableBean, InitializingBean, ApplicationContext
 
         List<GeoServerTileLayer> affected = new ArrayList<GeoServerTileLayer>();
         for (GeoServerTileLayer tl : tileLayers) {
-            GeoServerTileLayerInfo info = tl.getInfo();
-            String defaultStyle = tl.getStyles();// may be null if backed by a LayerGroupInfo
-            Set<String> cachedStyles = info.cachedStyles();
-            if (styleName.equals(defaultStyle) || cachedStyles.contains(styleName)) {
-                affected.add(tl);
+            try {
+                GeoServerTileLayerInfo info = tl.getInfo();
+                String defaultStyle = tl.getStyles();// may be null if backed by a LayerGroupInfo
+                Set<String> cachedStyles = info.cachedStyles();
+                if (styleName.equals(defaultStyle) || cachedStyles.contains(styleName)) {
+                    affected.add(tl);
+                }
+            } catch (Exception e) {
+                log.log(Level.SEVERE, "Failed to retrieve style info for layer" + tl.getName(), e);
             }
         }
         return affected;
@@ -1497,17 +1555,21 @@ public class GWC implements DisposableBean, InitializingBean, ApplicationContext
         List<LayerInfo> result = new ArrayList<LayerInfo>();
         {
             for (LayerInfo layer : getLayerInfos()) {
-                String name = layer.getDefaultStyle().getName();
-                if (styleName.equals(name)) {
-                    result.add(layer);
-                    continue;
-                }
-                for (StyleInfo alternateStyle : layer.getStyles()) {
-                    name = alternateStyle.getName();
+                try {
+                    String name = layer.getDefaultStyle().getName();
                     if (styleName.equals(name)) {
                         result.add(layer);
-                        break;
+                        continue;
                     }
+                    for (StyleInfo alternateStyle : layer.getStyles()) {
+                        name = alternateStyle.getName();
+                        if (styleName.equals(name)) {
+                            result.add(layer);
+                            break;
+                        }
+                    }
+                } catch (Exception e) {
+                    log.log(Level.SEVERE, "Failed to retrieve style info for layer" + layer.getName(), e);
                 }
             }
         }
@@ -1830,6 +1892,70 @@ public class GWC implements DisposableBean, InitializingBean, ApplicationContext
         }
         return null;
     }
+    
+    /**
+     * Verify that a layer is accessible within a certain bounding box using the (secured) catalog
+     * 
+     * @param layerName name of the layer
+     * @param boundingBox bounding box
+     * @throws ServiceException 
+     */
+    public void verifyAccessLayer(String layerName, ReferencedEnvelope boundingBox) throws ServiceException {
+        LayerInfo layerInfo =  getLayerInfoByName(layerName); //catalog.getLayerByName(layerName);
+        if (layerInfo == null) {
+            throw new ServiceException("Could not find layer " + layerName, "LayerNotDefined");
+        }
+        if (layerInfo instanceof SecuredLayerInfo && boundingBox != null) {
+            //test layer bbox limits
+            SecuredLayerInfo securedLayerInfo = (SecuredLayerInfo) layerInfo;
+            WrapperPolicy policy = securedLayerInfo.getWrapperPolicy();
+            AccessLimits limits = policy.getLimits();
+                        
+            if (limits instanceof DataAccessLimits) {
+                //ensure we are all using the same CRS
+                CoordinateReferenceSystem dataCrs = layerInfo.getResource().getCRS();  
+                if (boundingBox.getCoordinateReferenceSystem()!=null && !CRS.equalsIgnoreMetadata(dataCrs, boundingBox.getCoordinateReferenceSystem())) {
+                    try {
+                        boundingBox = boundingBox.transform(dataCrs,true);
+                    } catch (Exception e) {
+                        //bboxes not compatible? deny access for all certainty.
+                        boundingBox = null;
+                    }
+                }
+                Envelope limitBox = new ReferencedEnvelope(ReferencedEnvelope.EVERYTHING, dataCrs); 
+                
+                Filter filter = ((DataAccessLimits) limits).getReadFilter();
+                if (filter != null) {
+                    //extract filter envelope from filter
+                    Envelope box = (Envelope) filter.accept(ExtractBoundsFilterVisitor.BOUNDS_VISITOR, null);
+                    if (box != null) {
+                        limitBox = new ReferencedEnvelope(limitBox.intersection(box), dataCrs);                        
+                    }
+                }
+                if (limits instanceof CoverageAccessLimits) {
+                    if (((CoverageAccessLimits) limits).getRasterFilter() != null) {
+                        Envelope box = ((CoverageAccessLimits) limits).getRasterFilter().getEnvelopeInternal();
+                        if (box != null) {
+                            limitBox = new ReferencedEnvelope(limitBox.intersection(box), dataCrs);                        
+                        }
+                    }
+                }
+                if (limits instanceof WMSAccessLimits) {
+                    if (((WMSAccessLimits) limits).getRasterFilter() != null) {
+                        Envelope box = ((WMSAccessLimits) limits).getRasterFilter().getEnvelopeInternal();
+                        if (box != null) {
+                            limitBox = new ReferencedEnvelope(limitBox.intersection(box), dataCrs);                        
+                        }
+                    }
+                }                
+                
+                if (!limitBox.covers(ReferencedEnvelope.EVERYTHING) && (boundingBox==null || !limitBox.contains(boundingBox))) {
+                    throw new ServiceException("Access denied to bounding box on layer " + layerName, "AccessDenied");
+                }
+            }
+            
+        }
+    }
 
     public CoordinateReferenceSystem getDeclaredCrs(final String geoServerTileLayerName) {
         GeoServerTileLayer layer = (GeoServerTileLayer) getTileLayerByName(geoServerTileLayerName);
@@ -1850,6 +1976,7 @@ public class GWC implements DisposableBean, InitializingBean, ApplicationContext
     public static String tileLayerName(LayerGroupInfo lgi) {
         return lgi.prefixedName();
     }
+    
 
     /**
      * Flush caches
@@ -1884,4 +2011,5 @@ public class GWC implements DisposableBean, InitializingBean, ApplicationContext
     public void setApplicationContext(ApplicationContext applicationContext) throws BeansException {
         this.applicationContext = applicationContext;
     }
+
 }
