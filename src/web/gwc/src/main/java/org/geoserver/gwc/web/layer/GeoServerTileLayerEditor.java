@@ -1,4 +1,5 @@
-/* Copyright (c) 2001 - 2013 OpenPlans - www.openplans.org. All rights reserved.
+/* (c) 2014 Open Source Geospatial Foundation - all rights reserved
+ * (c) 2001 - 2013 OpenPlans
  * This code is licensed under the GPL 2.0 license, available at the root
  * application directory.
  */
@@ -173,6 +174,11 @@ class GeoServerTileLayerEditor extends FormComponentPanel<GeoServerTileLayerInfo
 
         add(new Label("createTileLayerLabel", createTileLayerLabelModel));
 
+        // Get the model and check if the Enabled parameter has been defined
+        GeoServerTileLayerInfoModel model = ((GeoServerTileLayerInfoModel)tileLayerModel);
+
+        boolean undefined = model.getEnabled() == null;
+        
         boolean doCreateTileLayer;
         if (tileLayerInfo.getId() != null) {
             doCreateTileLayer = true;
@@ -180,6 +186,10 @@ class GeoServerTileLayerEditor extends FormComponentPanel<GeoServerTileLayerInfo
             doCreateTileLayer = true;
         } else {
             doCreateTileLayer = false;
+        }
+        // Add the enabled/disabled parameter depending on the doCreateTileLayer variable if not already set
+        if (undefined) {
+            model.setEnabled(doCreateTileLayer);
         }
         add(createLayer = new CheckBox("createTileLayer", new Model<Boolean>(doCreateTileLayer)));
         createLayer.add(new AttributeModifier("title", true, new ResourceModel(
@@ -288,7 +298,9 @@ class GeoServerTileLayerEditor extends FormComponentPanel<GeoServerTileLayerInfo
         final CatalogInfo layer = layerModel.getObject();
         final GeoServerTileLayerInfo tileLayerInfo = getModelObject();
         final boolean tileLayerExists = gwc.hasTileLayer(layer);
-        final boolean createLayer = this.createLayer.getModelObject().booleanValue();
+        GeoServerTileLayerInfoModel model = (GeoServerTileLayerInfoModel) getModel();
+        final boolean createLayer = model.getEnabled() == null ? GWC.get().getConfig()
+                .isCacheLayersByDefault() : model.getEnabled();
 
         if (!createLayer) {
             if (tileLayerExists) {
@@ -389,7 +401,8 @@ class GeoServerTileLayerEditor extends FormComponentPanel<GeoServerTileLayerInfo
     protected void convertInput() {
         createLayer.processInput();
         final boolean createTileLayer = createLayer.getModelObject().booleanValue();
-
+        GeoServerTileLayerInfoModel model = ((GeoServerTileLayerInfoModel)getModel());
+        model.setEnabled(createTileLayer);
         GeoServerTileLayerInfo tileLayerInfo = getModelObject();
 
         if (createTileLayer) {

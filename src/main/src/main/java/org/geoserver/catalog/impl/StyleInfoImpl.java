@@ -1,4 +1,5 @@
-/* Copyright (c) 2001 - 2013 OpenPlans - www.openplans.org. All rights reserved.
+/* (c) 2014 Open Source Geospatial Foundation - all rights reserved
+ * (c) 2001 - 2013 OpenPlans
  * This code is licensed under the GPL 2.0 license, available at the root
  * application directory.
  */
@@ -164,7 +165,7 @@ public class StyleInfoImpl implements StyleInfo {
 
     @Override
     public String toString() {
-        return new StringBuilder(getClass().getSimpleName()).append('[').append(name).append(']')
+        return new StringBuilder(getClass().getSimpleName()).append('[').append(prefixedName()).append(']')
                 .toString();
     }
     
@@ -184,5 +185,14 @@ public class StyleInfoImpl implements StyleInfo {
         }
 
         return this;
+    }
+
+    @Override
+    public String prefixedName() {
+        if(workspace != null) {
+            return workspace.getName() + ":" + getName();
+        } else {
+            return getName();
+        }
     }
 }

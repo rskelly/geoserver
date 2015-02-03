@@ -1,4 +1,5 @@
-/* Copyright (c) 2014 OpenPlans - www.openplans.org. All rights reserved.
+/* (c) 2014 Open Source Geospatial Foundation - all rights reserved
+ * (c) 2014 OpenPlans
  * This code is licensed under the GPL 2.0 license, available at the root
  * application directory.
  */
@@ -11,6 +12,7 @@ import java.util.logging.Logger;
 
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
+import org.geoserver.platform.resource.Resource;
 import org.geoserver.wps.process.AbstractRawData;
 import org.geoserver.wps.process.FileRawData;
 import org.geoserver.wps.process.RawData;
@@ -37,7 +39,8 @@ public class RawDataPPIO extends ComplexPPIO {
 
     public Object decode(InputStream input, String mimeType, boolean asynchronous) throws Exception {
         if (asynchronous) {
-            File file = resourceManager.getTemporaryFile(".bin");
+            Resource tmp = resourceManager.getTemporaryResource(".bin");
+            File file = tmp.file();
             FileUtils.copyInputStreamToFile(input, file);
             return new FileRawData(file, mimeType);
         } else {

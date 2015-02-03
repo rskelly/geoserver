@@ -1,4 +1,5 @@
-/* Copyright (c) 2001 - 2013 OpenPlans - www.openplans.org. All rights reserved.
+/* (c) 2014 Open Source Geospatial Foundation - all rights reserved
+ * (c) 2001 - 2013 OpenPlans
  * This code is licensed under the GPL 2.0 license, available at the root
  * application directory.
  */
@@ -6,7 +7,6 @@ package org.vfny.geoserver.global;
 
 import java.io.IOException;
 
-import org.geoserver.catalog.FeatureTypeInfo;
 import org.geotools.data.DataSourceException;
 import org.geotools.data.FeatureLock;
 import org.geotools.data.FeatureLocking;
@@ -15,7 +15,6 @@ import org.geotools.data.simple.SimpleFeatureLocking;
 import org.opengis.feature.simple.SimpleFeature;
 import org.opengis.feature.simple.SimpleFeatureType;
 import org.opengis.filter.Filter;
-import org.opengis.referencing.crs.CoordinateReferenceSystem;
 
 
 /**
@@ -41,16 +40,10 @@ public class GeoServerFeatureLocking extends GeoServerFeatureStore implements Si
      * Creates a new DEFQueryFeatureLocking object.
      *
      * @param locking GeoTools2 FeatureSource
-     * @param schema DOCUMENT ME!
-     * @param definitionQuery DOCUMENT ME!
-     * @param declaredCRS 
-     * @param srsHandling see {@link FeatureTypeInfo#FORCE} & co.
-     * @param linearizationTolerance TODO
+     * @param settings Settings for this store
      */
-    GeoServerFeatureLocking(FeatureLocking<SimpleFeatureType, SimpleFeature> locking,
-            SimpleFeatureType schema, Filter definitionQuery,
-            CoordinateReferenceSystem declaredCRS, int srsHandling, Double linearizationTolerance) {
-        super(locking, schema, definitionQuery, declaredCRS, srsHandling, linearizationTolerance);
+    GeoServerFeatureLocking(FeatureLocking<SimpleFeatureType, SimpleFeature> locking, Settings settings) {
+        super(locking, settings);
     }
 
     FeatureLocking<SimpleFeatureType, SimpleFeature> locking() {

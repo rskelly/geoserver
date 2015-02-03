@@ -1,4 +1,5 @@
-/* Copyright (c) 2001 - 2013 OpenPlans - www.openplans.org. All rights reserved.
+/* (c) 2014 Open Source Geospatial Foundation - all rights reserved
+ * (c) 2001 - 2013 OpenPlans
  * This code is licensed under the GPL 2.0 license, available at the root
  * application directory.
  */
@@ -46,7 +47,11 @@ import org.apache.wicket.model.IModel;
 import org.apache.wicket.model.Model;
 import org.apache.wicket.model.PropertyModel;
 import org.apache.wicket.util.lang.Bytes;
-import org.geoserver.catalog.*;
+import org.geoserver.catalog.ResourcePool;
+import org.geoserver.catalog.StyleHandler;
+import org.geoserver.catalog.StyleInfo;
+import org.geoserver.catalog.Styles;
+import org.geoserver.catalog.WorkspaceInfo;
 import org.geoserver.catalog.impl.StyleInfoImpl;
 import org.geoserver.config.GeoServerDataDirectory;
 import org.geoserver.ows.util.ResponseUtils;
@@ -75,6 +80,8 @@ import org.xml.sax.SAXParseException;
  */
 @SuppressWarnings("serial")
 public abstract class AbstractStylePage extends GeoServerSecuredPage {
+
+    protected String format;
 
     protected TextField nameTextField;
 
@@ -114,6 +121,9 @@ public abstract class AbstractStylePage extends GeoServerSecuredPage {
         IModel<StyleInfo> styleModel = new CompoundPropertyModel(style != null ? 
             new StyleDetachableModel(style) : getCatalog().getFactory().createStyle());
         
+        format = style != null ? style.getFormat() : getCatalog().getFactory().createStyle()
+                .getFormat();
+
         styleForm = new Form("form", styleModel) {
             @Override
             protected void onSubmit() {
@@ -137,7 +147,8 @@ public abstract class AbstractStylePage extends GeoServerSecuredPage {
 
         styleForm.add(wsChoice);
 
-        formatChoice = new DropDownChoice<String>("format", new StyleFormatsModel(), new ChoiceRenderer<String>() {
+        formatChoice = new DropDownChoice<String>("format", new PropertyModel(this, "format"),
+                new StyleFormatsModel(), new ChoiceRenderer<String>() {
             @Override
             public String getIdValue(String object, int index) {
                 return object;
@@ -152,7 +163,7 @@ public abstract class AbstractStylePage extends GeoServerSecuredPage {
             @Override
             protected void onUpdate(AjaxRequestTarget target) {
                 target.appendJavascript(String.format(
-                    "document.gsEditors.editor.setOption('mode', '%s');", styleHandler().getCodeMirrorEditMode()));
+                    "if (document.gsEditors) { document.gsEditors.editor.setOption('mode', '%s'); }", styleHandler().getCodeMirrorEditMode()));
             }
         });
         styleForm.add(formatChoice);
@@ -161,7 +172,8 @@ public abstract class AbstractStylePage extends GeoServerSecuredPage {
         formatReadOnlyMessage.setVisible(false);
         styleForm.add(formatReadOnlyMessage);
 
-        styleForm.add( editor = new CodeMirrorEditor("styleEditor", new PropertyModel(this, "rawStyle")) );
+        styleForm.add(editor = new CodeMirrorEditor("styleEditor", styleHandler()
+                .getCodeMirrorEditMode(), new PropertyModel(this, "rawStyle")));
         // force the id otherwise this blasted thing won't be usable from other forms
         editor.setTextAreaMarkupId("editor");
         editor.setOutputMarkupId(true);
@@ -327,7 +339,7 @@ public abstract class AbstractStylePage extends GeoServerSecuredPage {
             @Override
             protected void onClick(AjaxRequestTarget target, Form form) {
                 editor.processInput();
-                formatChoice.processInput();
+
                 List<Exception> errors = validateSLD();
                 
                 if ( errors.isEmpty() ) {
@@ -404,6 +416,10 @@ public abstract class AbstractStylePage extends GeoServerSecuredPage {
                         // same here, force validation or the field won't be udpated
                         editor.reset();
                         setRawStyle(readFile(style));
+                        formatChoice.setModelObject(style.getFormat());
+                        target.appendJavascript(String
+                                .format("if (document.gsEditors) { document.gsEditors.editor.setOption('mode', '%s'); }", styleHandler().getCodeMirrorEditMode()));
+
                     } catch (Exception e) {
                         error("Errors occurred loading the '" + style.getName() + "' style");
                     }
@@ -417,9 +433,10 @@ public abstract class AbstractStylePage extends GeoServerSecuredPage {
 
                     @Override
                     public CharSequence preDecorateScript(CharSequence script) {
-                        return "if(event.view.document.gsEditors."
-                                + editor.getTextAreaMarkupId()
-                                + ".getValue() != '' &&"
+                        return "var val = event.view.document.gsEditors ? "
+                                + "event.view.document.gsEditors." + editor.getTextAreaMarkupId() + ".getValue() : "
+                                + "event.view.document.getElementById(\"" + editor.getTextAreaMarkupId() + "\").value; "
+                                + "if(val != '' &&"
                                 + "!confirm('"
                                 + new ParamResourceModel("confirmOverwrite", AbstractStylePage.this)
                                         .getString() + "')) return false;" + script;

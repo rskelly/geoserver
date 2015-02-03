@@ -1,4 +1,5 @@
-/* Copyright (c) 2001 - 2013 OpenPlans - www.openplans.org. All rights reserved.
+/* (c) 2014 Open Source Geospatial Foundation - all rights reserved
+ * (c) 2001 - 2013 OpenPlans
  * This code is licensed under the GPL 2.0 license, available at the root
  * application directory.
  */
@@ -146,8 +147,12 @@ public class WMSTest extends WMSTestSupport {
         
         Set<Integer> results = new HashSet<Integer>();
         FeatureIterator it = features.features();
-        while (it.hasNext()) {
-            results.add( (Integer) it.next().getProperty("id").getValue());
+        try {
+            while (it.hasNext()) {
+                results.add( (Integer) it.next().getProperty("id").getValue());
+            }
+        } finally {
+            it.close();
         }
         assertTrue("expected " + Arrays.toString(expectedIds) + " but got " + results,
                 results.containsAll(Arrays.asList(expectedIds)));

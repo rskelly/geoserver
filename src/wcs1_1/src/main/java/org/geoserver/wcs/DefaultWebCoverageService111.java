@@ -1,4 +1,5 @@
-/* Copyright (c) 2001 - 2013 OpenPlans - www.openplans.org. All rights reserved.
+/* (c) 2014 Open Source Geospatial Foundation - all rights reserved
+ * (c) 2001 - 2013 OpenPlans
  * This code is licensed under the GPL 2.0 license, available at the root
  * application directory.
  */
@@ -425,9 +426,9 @@ public class DefaultWebCoverageService111 implements WebCoverageService111 {
              */
             Interpolation interpolation = Interpolation.getInstance(Interpolation.INTERP_NEAREST);
             if (interpolationType != null) {
-                if (interpolationType.equalsIgnoreCase("bilinear")) {
+                if (interpolationType.equalsIgnoreCase("linear") || interpolationType.equalsIgnoreCase("bilinear")) {
                     interpolation = Interpolation.getInstance(Interpolation.INTERP_BILINEAR);
-                } else if (interpolationType.equalsIgnoreCase("bicubic")) {
+                } else if (interpolationType.equalsIgnoreCase("cubic") || interpolationType.equalsIgnoreCase("bicubic")) {
                     interpolation = Interpolation.getInstance(Interpolation.INTERP_BICUBIC);
                 } else if (interpolationType.equalsIgnoreCase("nearest")) {
                     interpolation = Interpolation.getInstance(Interpolation.INTERP_NEAREST);
@@ -555,7 +556,9 @@ public class DefaultWebCoverageService111 implements WebCoverageService111 {
                 return new GridCoverage[] { bandSelectedCoverage };
             }
         } catch (Throwable e) {
-            CoverageCleanerCallback.addCoverages(coverage);
+            if (coverage != null) {
+                CoverageCleanerCallback.addCoverages(coverage);
+            }
             if (e instanceof WcsException) {
                 throw (WcsException) e;
             } else {
@@ -700,7 +703,7 @@ public class DefaultWebCoverageService111 implements WebCoverageService111 {
 
     /**
      * Checks that the elements of the Output part of the request do make sense by comparing them to the coverage metadata
-     * 
+     *
      * @param info
      * @param rangeSubset
      */
@@ -887,12 +890,17 @@ public class DefaultWebCoverageService111 implements WebCoverageService111 {
             boolean interpolationSupported = false;
 
             if (interpolation.equalsIgnoreCase("nearest")) {
-                interpolation = "nearest neighbor";
+                interpolation = "nearest";
+            } else if (interpolation.equalsIgnoreCase("cubic") || interpolation.equalsIgnoreCase("bicubic")) {
+                interpolation = "bicubic";
+            } else if (interpolation.equalsIgnoreCase("linear") || interpolation.equalsIgnoreCase("bilinear")) {
+                interpolation = "bilinear";
             }
-            for (Iterator it = info.getInterpolationMethods().iterator(); it.hasNext();) {
-                String method = (String) it.next();
-                if (interpolation.equalsIgnoreCase(method)) {
+
+            for (String method : info.getInterpolationMethods()) {
+                if (method.toLowerCase().startsWith(interpolation)) {
                     interpolationSupported = true;
+                    break;
                 }
             }
 

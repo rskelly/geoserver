@@ -29,7 +29,8 @@ import org.geoserver.wfs.request.FeatureCollectionResponse;
 import org.geoserver.wfs.request.GetFeatureRequest;
 import org.geoserver.wms.GetMapRequest;
 import org.geoserver.wms.MapLayerInfo;
-import org.geoserver.wps.WPSStorageCleaner;
+import org.geoserver.wps.resource.WPSResourceManager;
+import org.geotools.data.DataUtilities;
 import org.geotools.data.simple.SimpleFeatureCollection;
 import org.geotools.feature.FeatureCollection;
 import org.geotools.feature.NameImpl;
@@ -51,6 +52,7 @@ import org.geotools.referencing.CRS;
 import org.geotools.styling.Style;
 import org.opengis.filter.Filter;
 import org.opengis.filter.FilterFactory2;
+import org.opengis.referencing.FactoryException;
 import org.opengis.referencing.crs.CoordinateReferenceSystem;
 import org.opengis.referencing.crs.GeographicCRS;
 
@@ -61,7 +63,7 @@ public class GeoPackageProcess implements GSProcess {
     
    private Catalog catalog;
     
-   private WPSStorageCleaner storage;
+    private WPSResourceManager resources;
    
    private GetFeature getFeatureDelegate;
       
@@ -69,8 +71,9 @@ public class GeoPackageProcess implements GSProcess {
    
    private FilterFactory2 filterFactory;
    
-   public GeoPackageProcess(GeoServer geoServer, GeoPackageGetMapOutputFormat mapOutput, WPSStorageCleaner storage, FilterFactory2 filterFactory) {
-       this.storage = storage;
+    public GeoPackageProcess(GeoServer geoServer, GeoPackageGetMapOutputFormat mapOutput,
+            WPSResourceManager resources, FilterFactory2 filterFactory) {
+        this.resources = resources;
        this.mapOutput = mapOutput;
        this.filterFactory = filterFactory;
        catalog = geoServer.getCatalog();
@@ -97,9 +100,23 @@ public class GeoPackageProcess implements GSProcess {
    @DescribeResult(name="geopackage", description="Link to Compiled Geopackage File")
    public URL execute(@DescribeParameter(name="contents", description="xml scheme describing geopackage contents") GeoPackageProcessRequest contents) throws IOException {
        
-       final File file = new File( createTempDir(storage.getStorage()), contents.getName()+ ".gpkg");
+       final File file;
+       
+       URL path = contents.getPath();
+       boolean remove = contents.getRemove() != null ? contents.getRemove() : true;
+       
+        String outputName = contents.getName() + ".gpkg";
+       if(!remove && path != null){ 
+           File urlToFile = DataUtilities.urlToFile(path);
+           urlToFile.mkdirs();
+           file =new File(urlToFile, contents.getName()+ ".gpkg");
+       }else{
+            file = resources.getOutputResource(null, outputName).file();
+       }
        
        GeoPackage gpkg = new GeoPackage(file);
+       // Initialize the GeoPackage file in order to avoid exceptions when accessing the geoPackage file
+       gpkg.init();
               
        for (int i=0; i < contents.getLayerCount() ; i++) {
            Layer layer = contents.getLayer(i);
@@ -185,6 +202,10 @@ public class GeoPackageProcess implements GSProcess {
                    e.setBounds(bounds);
                   
                    gpkg.add(e, (SimpleFeatureCollection)  collection);
+                   
+                   if (features.isIndexed()) {
+                       gpkg.createSpatialIndex(e);
+                   }                   
                }
                
            } else if (layer.getType() == LayerType.TILES) {
@@ -256,6 +277,16 @@ public class GeoPackageProcess implements GSProcess {
                    request.setSRS(tiles.getSrs().toString());
                }
 
+               // Get the request SRS defined and set is as the request CRS
+               String srs = request.getSRS();
+               if(srs != null && !srs.isEmpty()){
+                   try {
+                       request.setCrs(CRS.decode(srs));
+                   } catch (FactoryException e) {
+                       throw new RuntimeException(e);
+                   }
+               }
+
                request.setBgColor(tiles.getBgColor());
                request.setTransparent(tiles.isTransparent());
                request.setStyleBody(tiles.getSldBody());
@@ -321,9 +352,12 @@ public class GeoPackageProcess implements GSProcess {
        }
        
        gpkg.close();
-              
-       return storage.getURL(file);
-       
+       // Add to storage only if it is a temporary file
+       if(path != null && !remove){
+           return path;
+       }else{
+            return new URL(resources.getOutputResourceUrl(outputName, "application/x-gpkg"));
+       } 
    }
 
     private void addLayerMetadata(Entry e, Layer layer) {

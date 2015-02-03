@@ -127,6 +127,8 @@ The supported format options are:
 * ``legend`` ((values = ``true``,``false``)): KML may add the legend.
 * ``kmscore`` ((values = between ``0`` to force raster output and ``100`` to force vector output)): parameter sets whether GeoServer should render KML data as vector or raster. This parameter primarily affects Google Earth rendering.  
 * ``kmltitle``: parameter sets the KML title.
+* ``kmlrefresh`` ((values = greater than ``0`` or ``expires``): Force Network Link reload in refresh mode on interval of seconds.  When expires is specified client will refresh whenever the time has elapsed specified in cache expiration headers.  The caching time may be set in the Layer configuration under Publishing tab setting  HTTP Cache Time. This parameter primarily affects Google Earth rendering and is dependent on being respected by the client.  Using a second interval is a more reliable choice.  
+* ``kmlvisible`` ((values = ``true``,``false``)): Indicates whether layers selected will default to enabled or not. Default behavior is enabled. This parameter primarily affects Google Earth rendering.
 
 maxFeatures and startIndex
 --------------------------
@@ -205,9 +207,9 @@ and the ``tiled`` and ``tilesorigin`` parameters must be specified.
 The ``tiled`` parameter controls whether meta-tiling is used. 
 The syntax is::
 
-   tiled=[yes|no]
+   tiled=[true|false]
 
-To invoke meta-tiling use ``tiled=yes``.
+To invoke meta-tiling use ``tiled=true``.
 
 tilesorigin
 -----------
@@ -248,8 +250,21 @@ The following code shows how to specify the meta-tiling parameters:
             layers: 'layerName',
             format: 'image/png',
             tiled: true,
-            tilesorigin: [map.maxExtent.left, map.maxExtent.bottom]  
+            tilesorigin: map.maxExtent.left + ',' + map.maxExtent.bottom
         },
         {buffer: 0} 
     );
 
+scaleMethod
+-----------
+
+The ``scaleMethod`` parameter controls how the scale denominator is computed by GeoServer
+The two possible values are:
+
+  * ``OGC`` (default): the scale denominator is computed according to the OGC SLD specification, which
+                       imposes simplified formulas for the sake of interoperability
+  * ``Accurate``: use the full expressions for computing the scale denominator against geographic
+                   data, taking into account the ellipsoidal shape of Earth
+                   
+The two methods tend to return values rather close to each other near the equator, but they
+do diverge to larger differences as the latitude approaches the poles.

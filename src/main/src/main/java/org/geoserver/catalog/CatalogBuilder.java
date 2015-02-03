@@ -1,4 +1,5 @@
-/* Copyright (c) 2001 - 2013 OpenPlans - www.openplans.org. All rights reserved.
+/* (c) 2014 Open Source Geospatial Foundation - all rights reserved
+ * (c) 2001 - 2013 OpenPlans
  * This code is licensed under the GPL 2.0 license, available at the root
  * application directory.
  */
@@ -1334,11 +1335,11 @@ public class CatalogBuilder {
 
         // setup the layer type
         if (layer.getResource() instanceof FeatureTypeInfo) {
-            layer.setType(LayerInfo.Type.VECTOR);
+            layer.setType(PublishedType.VECTOR);
         } else if (layer.getResource() instanceof CoverageInfo) {
-            layer.setType(LayerInfo.Type.RASTER);
+            layer.setType(PublishedType.RASTER);
         } else if (layer.getResource() instanceof WMSLayerInfo) {
-            layer.setType(LayerInfo.Type.WMS);
+            layer.setType(PublishedType.WMS);
         }
 
         return layer;

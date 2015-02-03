@@ -1,18 +1,19 @@
-/* Copyright (c) 2001 - 2013 OpenPlans - www.openplans.org. All rights reserved.
+/* (c) 2014 Open Source Geospatial Foundation - all rights reserved
+ * (c) 2001 - 2013 OpenPlans
  * This code is licensed under the GPL 2.0 license, available at the root
  * application directory.
  */
 package org.geoserver.web.demo;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
+import static org.junit.Assert.*;
 
 import org.geoserver.catalog.LayerGroupInfo;
 import org.geoserver.catalog.LayerInfo;
 import org.geoserver.data.test.MockData;
 import org.geoserver.web.GeoServerWicketTestSupport;
 import org.junit.Test;
+
+import com.google.common.collect.Lists;
 
 public class PreviewLayerProviderTest extends GeoServerWicketTestSupport {
 
@@ -67,7 +68,7 @@ public class PreviewLayerProviderTest extends GeoServerWicketTestSupport {
         
         LayerGroupInfo group = getCatalog().getFactory().createLayerGroup();
         group.setName("testContainerLayerGroup");
-        group.setMode(LayerGroupInfo.Mode.CONTAINER);        
+        group.setMode(LayerGroupInfo.Mode.CONTAINER);
         group.getLayers().add(layer);
         getCatalog().add(group);
         try {
@@ -105,9 +106,16 @@ public class PreviewLayerProviderTest extends GeoServerWicketTestSupport {
             getCatalog().remove(containerGroup);
         }        
     }    
-    
+
+    @Test(expected=UnsupportedOperationException.class)
+    public void testGetItems() throws Exception {
+        // Ensure that the method getItems is no more called
+        PreviewLayerProvider provider = new PreviewLayerProvider();
+        provider.getItems();
+    }
+
     private PreviewLayer getPreviewLayer(PreviewLayerProvider provider, String prefixedName) {
-        for (PreviewLayer pl : provider.getItems()) {
+        for (PreviewLayer pl : Lists.newArrayList(provider.iterator(0, Integer.MAX_VALUE))) {
             if(pl.getName().equals(prefixedName)) {
                 return pl; 
             }

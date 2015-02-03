@@ -1,4 +1,5 @@
-/* Copyright (c) 2001 - 2013 OpenPlans - www.openplans.org. All rights reserved.
+/* (c) 2014 Open Source Geospatial Foundation - all rights reserved
+ * (c) 2001 - 2013 OpenPlans
  * This code is licensed under the GPL 2.0 license, available at the root
  * application directory.
  */
@@ -20,7 +21,7 @@ public class SingleIpFlowControllerTest extends IpFlowControllerTest {
         // an ip based flow controller that will allow just one request at a time
         SingleIpFlowController controller = new SingleIpFlowController(1, "127.0.0.1");
         String ipAddress = "127.0.0.1";
-        Request firstRequest = buildRequest(ipAddress, "");
+        Request firstRequest = buildIpRequest(ipAddress, "");
         FlowControllerTestingThread tSample = new FlowControllerTestingThread(firstRequest,
                 0, 0, controller);
         tSample.start();
@@ -32,9 +33,9 @@ public class SingleIpFlowControllerTest extends IpFlowControllerTest {
 
         // make three testing threads that will "process" forever, and will use the ip to identify themselves
         // as the same client, until we interrupt them
-        FlowControllerTestingThread t1 = new FlowControllerTestingThread(buildRequest(
+        FlowControllerTestingThread t1 = new FlowControllerTestingThread(buildIpRequest(
                 ip, ""), 0, Long.MAX_VALUE, controller);
-        FlowControllerTestingThread t2 = new FlowControllerTestingThread(buildRequest(
+        FlowControllerTestingThread t2 = new FlowControllerTestingThread(buildIpRequest(
                 ip, ""), 0, Long.MAX_VALUE, controller);
 
         try {
@@ -68,7 +69,7 @@ public class SingleIpFlowControllerTest extends IpFlowControllerTest {
     public void testConcurrentRequestsDifferentIPAddress() {
         SingleIpFlowController controller = new SingleIpFlowController(1, "192.168.1.8");
         String ipAddress = "127.0.0.1";
-        Request firstRequest = buildRequest(ipAddress, "");
+        Request firstRequest = buildIpRequest(ipAddress, "");
         FlowControllerTestingThread tSample = new FlowControllerTestingThread(firstRequest,
                 0, 0, controller);
         tSample.start();
@@ -78,9 +79,9 @@ public class SingleIpFlowControllerTest extends IpFlowControllerTest {
 
         String ip = firstRequest.getHttpRequest().getRemoteAddr();
 
-        FlowControllerTestingThread t1 = new FlowControllerTestingThread(buildRequest(
+        FlowControllerTestingThread t1 = new FlowControllerTestingThread(buildIpRequest(
                 ip, ""), 0, Long.MAX_VALUE, controller);
-        FlowControllerTestingThread t2 = new FlowControllerTestingThread(buildRequest(
+        FlowControllerTestingThread t2 = new FlowControllerTestingThread(buildIpRequest(
                 ip, ""), 0, Long.MAX_VALUE, controller);
 
         try {

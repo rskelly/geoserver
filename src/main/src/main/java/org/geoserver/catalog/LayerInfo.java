@@ -1,4 +1,5 @@
-/* Copyright (c) 2001 - 2013 OpenPlans - www.openplans.org. All rights reserved.
+/* (c) 2014 Open Source Geospatial Foundation - all rights reserved
+ * (c) 2001 - 2013 OpenPlans
  * This code is licensed under the GPL 2.0 license, available at the root
  * application directory.
  */
@@ -19,44 +20,9 @@ public interface LayerInfo extends PublishedInfo {
     public static final String BUFFER = "buffer";
 
     /**
-     * Enumeration for type of layer.
-     */
-    public enum Type {
-        VECTOR {
-            public Integer getCode() {
-                return 0;
-            }
-        },
-        RASTER {
-            public Integer getCode() {
-                return 1;
-            }
-        }, 
-        REMOTE {
-            public Integer getCode() {
-                return 2;
-            }
-            
-        },
-        WMS {
-            public Integer getCode() {
-                return 3;
-            }
-        };
-        
-        
-        public abstract Integer getCode();
-    }
-
-    /**
-     * The type of the layer.
-     */
-    Type getType();
-
-    /**
      * Sets the type of the layer.
      */
-    void setType( Type type );
+    void setType( PublishedType type );
 
     /**
      * The path which this layer is mapped to.

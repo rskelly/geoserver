@@ -1,4 +1,5 @@
-/* Copyright (c) 2001 - 2013 OpenPlans - www.openplans.org. All rights reserved.
+/* (c) 2014 Open Source Geospatial Foundation - all rights reserved
+ * (c) 2001 - 2013 OpenPlans
  * This code is licensed under the GPL 2.0 license, available at the root
  * application directory.
  */
@@ -19,6 +20,8 @@ import org.springframework.context.ApplicationContext;
 
 import junit.framework.TestCase;
 import static org.easymock.EasyMock.*;
+import org.geoserver.catalog.DataLinkInfo;
+import org.geoserver.catalog.impl.DataLinkInfoImpl;
 import static org.junit.Assert.*;
 
 public class ResponseUtilsTest {
@@ -72,6 +75,36 @@ public class ResponseUtilsTest {
         link.setContent("/metadata.xml?foo=bar");
 
         String url = ResponseUtils.proxifyMetadataLink(link, "http://localhost/geoserver");
+        assertEquals("http://localhost/geoserver/metadata.xml?foo=bar", url);
+    }
+
+    @Test
+    public void testProxyDataURL() throws Exception {
+        createAppContext("http://foo.org/geoserver");
+        DataLinkInfo link = new DataLinkInfoImpl();
+        link.setContent("http://bar.com/geoserver/metadata.xml?foo=bar");
+
+        String url = ResponseUtils.proxifyDataLink(link, "http://localhost/gesoserver");
+        assertEquals(link.getContent(), url);
+    }
+
+    @Test
+    public void testProxyDataURLBackReference() throws Exception {
+        createAppContext("http://foo.org/geoserver");
+        DataLinkInfo link = new DataLinkInfoImpl();
+        link.setContent("/metadata.xml?foo=bar");
+
+        String url = ResponseUtils.proxifyDataLink(link, "http://localhost/gesoserver");
+        assertEquals("http://foo.org/geoserver/metadata.xml?foo=bar", url);
+    }
+
+    @Test
+    public void testDataURLBackReferenceNoProxyBaseUrl() throws Exception {
+        createAppContext(null);
+        DataLinkInfo link = new DataLinkInfoImpl();
+        link.setContent("/metadata.xml?foo=bar");
+
+        String url = ResponseUtils.proxifyDataLink(link, "http://localhost/geoserver");
         assertEquals("http://localhost/geoserver/metadata.xml?foo=bar", url);
     }
 }

@@ -1,4 +1,5 @@
-/* Copyright (c) 2001 - 2013 OpenPlans - www.openplans.org. All rights reserved.
+/* (c) 2014 Open Source Geospatial Foundation - all rights reserved
+ * (c) 2001 - 2013 OpenPlans
  * This code is licensed under the GPL 2.0 license, available at the root
  * application directory.
  */
@@ -10,11 +11,10 @@ import java.io.OutputStreamWriter;
 import java.nio.charset.Charset;
 import java.util.List;
 
-
 import net.opengis.wfs.FeatureCollectionType;
+
 import org.geoserver.catalog.ResourceInfo;
 import org.geoserver.ows.Dispatcher;
-import org.geoserver.ows.Request;
 import org.geoserver.platform.ServiceException;
 import org.geoserver.template.DirectTemplateFeatureCollectionFactory;
 import org.geoserver.template.FeatureWrapper;
@@ -201,5 +201,10 @@ public class HTMLFeatureInfoOutputFormat extends GetFeatureInfoOutputFormat {
             t.setEncoding(charset.name());
             return t;
         }
+    }
+    
+    @Override
+    public String getCharset(){ 
+        return wms.getGeoServer().getSettings().getCharset();
     }
 }

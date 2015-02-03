@@ -1,4 +1,5 @@
-/* Copyright (c) 2001 - 2013 OpenPlans - www.openplans.org. All rights reserved.
+/* (c) 2014 Open Source Geospatial Foundation - all rights reserved
+ * (c) 2001 - 2013 OpenPlans
  * This code is licensed under the GPL 2.0 license, available at the root
  * application directory.
  */
@@ -42,7 +43,7 @@ public abstract class AbstractAccessRuleDAO<R extends Comparable<?>> {
     /**
      * Parsed rules
      */
-    Set<R> rules;
+    protected Set<R> rules;
 
     /**
      * Used to check the file for modifications
@@ -52,7 +53,7 @@ public abstract class AbstractAccessRuleDAO<R extends Comparable<?>> {
     /**
      * Stores the time of the last rule list loading
      */
-    long lastModified;
+    protected long lastModified;
     
     /**
      * The security dir
@@ -173,7 +174,7 @@ public abstract class AbstractAccessRuleDAO<R extends Comparable<?>> {
     /**
      * Checks the property file is up to date, eventually rebuilds the tree
      */
-    void checkPropertyFile(boolean force) {
+    protected void checkPropertyFile(boolean force) {
         try {
             if (rules == null || force) {
                 // no security folder, let's work against an empty properties then

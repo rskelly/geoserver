@@ -1,4 +1,5 @@
-/* Copyright (c) 2001 - 2013 OpenPlans - www.openplans.org. All rights reserved.
+/* (c) 2014 Open Source Geospatial Foundation - all rights reserved
+ * (c) 2001 - 2013 OpenPlans
  * This code is licensed under the GPL 2.0 license, available at the root
  * application directory.
  */
@@ -56,6 +57,7 @@ import org.geoserver.data.util.CoverageUtils;
 import org.geoserver.feature.retype.RetypingFeatureSource;
 import org.geoserver.platform.GeoServerExtensions;
 import org.geoserver.platform.GeoServerResourceLoader;
+import org.geoserver.platform.ServiceException;
 import org.geoserver.platform.resource.Resource;
 import org.geoserver.platform.resource.ResourceListener;
 import org.geoserver.platform.resource.ResourceNotification;
@@ -78,19 +80,20 @@ import org.geotools.data.ows.MultithreadedHttpClient;
 import org.geotools.data.ows.SimpleHttpClient;
 import org.geotools.data.ows.WMSCapabilities;
 import org.geotools.data.simple.SimpleFeatureSource;
+import org.geotools.data.store.ContentDataStore;
+import org.geotools.data.store.ContentFeatureSource;
+import org.geotools.data.store.ContentState;
 import org.geotools.data.wms.WebMapServer;
 import org.geotools.factory.Hints;
 import org.geotools.feature.AttributeTypeBuilder;
 import org.geotools.feature.FeatureTypes;
+import org.geotools.feature.NameImpl;
 import org.geotools.feature.simple.SimpleFeatureTypeBuilder;
 import org.geotools.geometry.GeneralEnvelope;
 import org.geotools.geometry.jts.ReferencedEnvelope;
 import org.geotools.gml2.GML;
-import org.geotools.jdbc.JDBCDataStore;
-import org.geotools.jdbc.VirtualTable;
 import org.geotools.measure.Measure;
 import org.geotools.referencing.CRS;
-import org.geotools.renderer.lite.RendererUtilities;
 import org.geotools.styling.Style;
 import org.geotools.util.SoftValueHashMap;
 import org.geotools.util.logging.Logging;
@@ -103,14 +106,13 @@ import org.opengis.feature.simple.SimpleFeatureType;
 import org.opengis.feature.type.AttributeDescriptor;
 import org.opengis.feature.type.FeatureType;
 import org.opengis.feature.type.GeometryDescriptor;
+import org.opengis.feature.type.Name;
 import org.opengis.feature.type.PropertyDescriptor;
 import org.opengis.filter.Filter;
 import org.opengis.referencing.crs.CoordinateReferenceSystem;
 import org.opengis.referencing.crs.GeographicCRS;
 import org.opengis.referencing.crs.SingleCRS;
-import org.opengis.referencing.cs.AxisDirection;
 import org.opengis.referencing.cs.CoordinateSystem;
-import org.opengis.referencing.cs.CoordinateSystemAxis;
 import org.opengis.referencing.operation.TransformException;
 import org.springframework.context.ApplicationContext;
 import org.vfny.geoserver.global.GeoServerFeatureLocking;
@@ -120,11 +122,20 @@ import org.vfny.geoserver.util.DataStoreUtils;
  * Provides access to resources such as datastores, coverage readers, and 
  * feature types.
  * <p>
- * 
+ * Provides caches for:
+ * <ul>
+ * <li>{@link #crsCache} - quick lookup of CoorrdinateReferenceSystem by srs name</li>
+ * <li>{@link #dataStoreCache} - live {@link DataAccess} connections. Responsible for maintaining lifecycle with an
+ * appropriate call to {@link DataAccess#dispose()} when no longer in use.</li>
+ * <li>{@link #featureTypeCache} </li>
+ * <li>{@link #featureTypeAttributeCache} </li>
+ * <li>{@link #wmsCache} </li>
+ * <li>{@link #coverageReaderCache} </li>
+ * <li>{@link #hintCoverageReaderCache} </li>
+ * <li>{@link #styleCache} </li>
  * </p>
  * 
- * @author Justin Deoliveira, The Open Planning Project
- *
+ * @author Justin Deoliveira, Boundless
  */
 public class ResourcePool {
 
@@ -150,8 +161,8 @@ public class ResourcePool {
     /** logging */
     static Logger LOGGER = Logging.getLogger( "org.geoserver.catalog");
     
-    static Class VERSIONING_FS = null;
-    static Class GS_VERSIONING_FS = null;
+    static Class<?> VERSIONING_FS = null;
+    static Class<?> GS_VERSIONING_FS = null;
     
     static {
         try {
@@ -173,7 +184,7 @@ public class ResourcePool {
 
     Catalog catalog;
     Map<String, CoordinateReferenceSystem> crsCache;
-    Map<String, DataAccess> dataStoreCache;
+    DataStoreCache dataStoreCache;
     Map<String, FeatureType> featureTypeCache;
     Map<String, List<AttributeTypeInfo>> featureTypeAttributeCache;
     Map<String, WebMapServer> wmsCache;
@@ -274,8 +285,14 @@ public class ResourcePool {
     public Map<String, DataAccess> getDataStoreCache() {
         return dataStoreCache;
     }
-
-    protected Map<String,DataAccess> createDataStoreCache() {
+    /**
+     * DataStoreCache implementation responsible for freeing DataAccess resources
+     * when they are no longer in use.
+     * 
+     * @return Cache used to look up DataAccess via id
+     * @see #getDataStoreCache()
+     */
+    protected DataStoreCache createDataStoreCache() {
         return new DataStoreCache();
     }
 
@@ -491,15 +508,15 @@ public class ResourcePool {
     }
     
     /**
-     * Returns the underlying resource for a datastore, caching the result.
+     * Returns the underlying resource for a DataAccess, caching the result.
      * <p>
      * In the result of the resource not being in the cache {@link DataStoreInfo#getConnectionParameters()}
-     * is used to connect to it.
+     * is used to create the connection.
      * </p>
-     * @param info the data store metadata.
-     * 
+     * @param info DataStoreMeta providing id used for cache lookup (and connection paraemters if a connection is needed)
      * @throws IOException Any errors that occur connecting to the resource.
      */
+    @SuppressWarnings({ "rawtypes", "unchecked" })
     public DataAccess<? extends FeatureType, ? extends Feature> getDataStore( DataStoreInfo info ) throws IOException {
         DataAccess<? extends FeatureType, ? extends Feature> dataStore = null;
         try {
@@ -512,7 +529,7 @@ public class ResourcePool {
                         //create data store
                         Map<String, Serializable> connectionParameters = info.getConnectionParameters();
                         
-                        //call this methdo to execute the hack which recognizes 
+                        // call this method to execute the hack which recognizes 
                         // urls which are relative to the data directory
                         // TODO: find a better way to do this
                         connectionParameters = ResourcePool.getParams(connectionParameters, catalog.getResourceLoader() );
@@ -843,11 +860,25 @@ public class ResourcePool {
     }
     
     FeatureType getFeatureType( FeatureTypeInfo info, boolean handleProjectionPolicy ) throws IOException {
+        try {
+            return tryGetFeatureType(info, handleProjectionPolicy);
+        } catch (Exception ex) {
+            LOGGER.log(Level.WARNING,
+                    "Error while getting feature type, flushing cache and retrying: {0}",
+                    ex.getMessage());
+            LOGGER.log(Level.FINE, "", ex);
+            this.clear(info);
+            this.flushDataStore(info);
+            return tryGetFeatureType(info, handleProjectionPolicy);
+        }        
+    }
+    
+    FeatureType tryGetFeatureType( FeatureTypeInfo info, boolean handleProjectionPolicy ) throws IOException {
         boolean cacheable = isCacheable(info) && handleProjectionPolicy;
         return cacheable ? getCacheableFeatureType(info, handleProjectionPolicy): 
                            getNonCacheableFeatureType(info, handleProjectionPolicy);
     }
-    
+
     FeatureType getCacheableFeatureType( FeatureTypeInfo info, boolean handleProjectionPolicy ) throws IOException {
         String key = getFeatureTypeInfoKey(info, handleProjectionPolicy);
         FeatureType ft = featureTypeCache.get( key );
@@ -855,24 +886,17 @@ public class ResourcePool {
             synchronized ( featureTypeCache ) {
                 ft = featureTypeCache.get( key );
                 if ( ft == null ) {
-                    
+
                     //grab the underlying feature type
                     DataAccess<? extends FeatureType, ? extends Feature> dataAccess = getDataStore(info.getStore());
-                    
-                    if(isSQLView(info, dataAccess)) {
-    
-                        VirtualTable vt = info.getMetadata().get(FeatureTypeInfo.JDBC_VIRTUAL_TABLE, VirtualTable.class);
-                        JDBCDataStore jstore = (JDBCDataStore) dataAccess;
-                        if(!jstore.getVirtualTables().containsValue(vt)) {
-                            jstore.addVirtualTable(vt);
-                        }
-                        ft = jstore.getSchema(vt.getName());
-                    } else {
-                        ft = dataAccess.getSchema(info.getQualifiedNativeName());
+                    FeatureTypeCallback initializer = getFeatureTypeInitializer(info, dataAccess);
+                    if (initializer != null) {
+                        initializer.initialize(info, dataAccess, null);
                     }
-                    
+                    // ft = jstore.getSchema(vt.getName());
+                    ft = dataAccess.getSchema(info.getQualifiedNativeName());
                     ft = buildFeatureType(info, handleProjectionPolicy, ft);
-                    
+
                     featureTypeCache.put( key, ft );
                 }
             }
@@ -882,62 +906,68 @@ public class ResourcePool {
 
     private FeatureType getNonCacheableFeatureType( FeatureTypeInfo info, boolean handleProjectionPolicy ) throws IOException {
         FeatureType ft = null;
-        
+
         //grab the underlying feature type
         DataAccess<? extends FeatureType, ? extends Feature> dataAccess = getDataStore(info.getStore());
-        
-        String vtName = null;
-        if(isSQLView(info, dataAccess)) {
-            JDBCDataStore jstore = (JDBCDataStore) dataAccess;
-            VirtualTable vt = info.getMetadata().get(FeatureTypeInfo.JDBC_VIRTUAL_TABLE, VirtualTable.class);
-            
-            
-            // building the virtual table structure is expensive, see if the VT is already registered in the db
-            if(jstore.getVirtualTables().containsValue(vt)) {
-                // if the virtual table is already registered in the store (and equality in the test above
-                // guarantees the structure is the same), we can just get the schema from it directly
-                ft = jstore.getSchema(vt.getName());
-                // paranoid check: make sure nobody changed the vt structure while we fetched 
-                // the data (rather unlikely, even more unlikely would be 
-                if(!jstore.getVirtualTables().containsValue(vt)) {
-                    ft = null;
-                }
-            } 
-            
-            if(ft == null) {
-                // use a highly random name, we don't want to actually add the
-                // virtual table to the store as this feature type is not cacheable,
-                // it is "dirty" or un-saved. The renaming below will take care
-                // of making the user see the actual name
-                // NT 14/8/2012: Removed synchronization on jstore as it blocked query
-                // execution and risk of UUID clash is considered acceptable.
-                final String[] typeNames = jstore.getTypeNames();
-                do {
-                    vtName = UUID.randomUUID().toString();
-                } while (Arrays.asList(typeNames).contains(vtName));                                
-                jstore.addVirtualTable(new VirtualTable(vtName, vt));
-    
-                ft = jstore.getSchema(vtName);
+
+        FeatureTypeCallback initializer = getFeatureTypeInitializer(info, dataAccess);
+        Name temporaryName = null;
+        if (initializer != null) {
+            // use a highly random name, we don't want to actually add the
+            // virtual table to the store as this feature type is not cacheable,
+            // it is "dirty" or un-saved. The renaming below will take care
+            // of making the user see the actual name
+            // NT 14/8/2012: Removed synchronization on jstore as it blocked query
+            // execution and risk of UUID clash is considered acceptable.
+
+            List<Name> typeNames = dataAccess.getNames();
+            String nsURI = null;
+            if (typeNames.size() > 0) {
+                nsURI = typeNames.get(0).getNamespaceURI();
             }
-        } else {
-            ft = dataAccess.getSchema(info.getQualifiedNativeName());
+            do {
+                String name = UUID.randomUUID().toString();
+                temporaryName = new NameImpl(nsURI, name);
+            } while (Arrays.asList(typeNames).contains(temporaryName));
+            if (!initializer.initialize(info, dataAccess, temporaryName)) {
+                temporaryName = null;
+            }
         }
-        
+        ft = dataAccess.getSchema(temporaryName != null ? temporaryName : info
+                .getQualifiedNativeName());
         ft = buildFeatureType(info, handleProjectionPolicy, ft);
-        
-        if(vtName != null) {
-            JDBCDataStore jstore = (JDBCDataStore) dataAccess;
-            jstore.removeVirtualTable(vtName);
+
+        // Remove layer configuration from datastore
+        if (initializer != null && temporaryName != null) {
+            initializer.dispose(info, dataAccess, temporaryName);
         }
+
         return ft;
     }
-    
-    private boolean isSQLView(FeatureTypeInfo info,
+
+    /**
+     * Looks up a FetureTypeInitializer for this FeatureTypeInfo and DataAccess.
+     * FeatureTypeInitializer are used to init and dispose configured feature types (as opposed to
+     * ones that natively originate from the source)
+     * 
+     * @param info
+     * @param dataAccess
+     * @param initializer
+     * @return
+     */
+    FeatureTypeCallback getFeatureTypeInitializer(FeatureTypeInfo info,
             DataAccess<? extends FeatureType, ? extends Feature> dataAccess) {
-        return dataAccess instanceof JDBCDataStore && info.getMetadata() != null &&
-                (info.getMetadata().get(FeatureTypeInfo.JDBC_VIRTUAL_TABLE) instanceof VirtualTable);
+        List<FeatureTypeCallback> featureTypeInitializers = GeoServerExtensions
+                .extensions(FeatureTypeCallback.class);
+        FeatureTypeCallback initializer = null;
+        for (FeatureTypeCallback fti : featureTypeInitializers) {
+            if (fti.canHandle(info, dataAccess)) {
+                initializer = fti;
+            }
+        }
+        return initializer;
     }
-    
+
     private FeatureType buildFeatureType(FeatureTypeInfo info,
             boolean handleProjectionPolicy, FeatureType ft) throws IOException {
         // TODO: support reprojection for non-simple FeatureType
@@ -1127,13 +1157,9 @@ public class ResourcePool {
         SimpleFeatureSource fs;
         
         // sql view handling
-        if(dataStore instanceof JDBCDataStore && info.getMetadata() != null &&
-                info.getMetadata().containsKey(FeatureTypeInfo.JDBC_VIRTUAL_TABLE)) {
-            VirtualTable vt = (VirtualTable) info.getMetadata().get(FeatureTypeInfo.JDBC_VIRTUAL_TABLE);
-            JDBCDataStore jstore = (JDBCDataStore) dataStore;
-            if(!jstore.getVirtualTables().containsValue(vt)) {
-                 jstore.addVirtualTable(vt);
-            }
+        FeatureTypeCallback initializer = getFeatureTypeInitializer(info, dataAccess);
+        if (initializer != null) {
+            initializer.initialize(info, dataAccess, null);
         }
                 
         //
@@ -1234,66 +1260,73 @@ public class ResourcePool {
 
             //return a normal 
             return GeoServerFeatureLocking.create(fs, schema, info.getFilter(), resultCRS, info
-                    .getProjectionPolicy().getCode(), getTolerance(info));
+                    .getProjectionPolicy().getCode(), getTolerance(info), info.getMetadata());
         }
     }
     
     private Double getTolerance(FeatureTypeInfo info) {
-    	// get the measure, if null, no linearization tolerance is available
-		Measure mt = info.getLinearizationTolerance();
-		if(mt == null) {
-			return null;
-		}
-		
-		// if the user did not specify a unit of measure, we use it as an absolute value
-		if(mt.getUnit() == null) {
-			return mt.doubleValue();
-		}
-		
-		// should not happen, but let's cover all our bases
-		CoordinateReferenceSystem crs = info.getCRS();
-		if(crs == null) {
-			return mt.doubleValue();
-		}
-		
-		// let's get the target unit
-		SingleCRS horizontalCRS = CRS.getHorizontalCRS(crs);
-		Unit targetUnit;
-		if(horizontalCRS != null) {
-			// leap of faith, the first axis is an horizontal one (
-			targetUnit = getFirstAxisUnit(horizontalCRS.getCoordinateSystem());
-		} else {
-			// leap of faith, the first axis is an horizontal one (
-			targetUnit = getFirstAxisUnit(crs.getCoordinateSystem());
-		}
-		
-		if((targetUnit != null && targetUnit == NonSI.DEGREE_ANGLE) || horizontalCRS instanceof GeographicCRS || crs instanceof GeographicCRS) {
-			// assume we're working against a type of geographic crs, must estimate the degrees equivalent
-			// to the measure, we are going to use a very rough estimate (cylindrical earth model)
-			// TODO: maybe look at the layer bbox and get a better estimate computed at the center of the bbox
-			UnitConverter converter = mt.getUnit().getConverterTo(SI.METER);
-			double tolMeters = converter.convert(mt.doubleValue());
-			return tolMeters * OGC_METERS_TO_DEGREES;
-		} else if(targetUnit != null && targetUnit.isCompatible(SI.METER)) {
-			// ok, we assume the target is not a geographic one, but we might
-			// have to convert between meters and feet maybe
-			UnitConverter converter = mt.getUnit().getConverterTo(targetUnit);
-			return converter.convert(mt.doubleValue());
-		} else {
-			return mt.doubleValue();
-		}
-		
-	}
+        // if no curved geometries, do not bother computing a tolerance
+        if (!info.isCircularArcPresent()) {
+            return null;
+        }
 
-	private Unit<?> getFirstAxisUnit(
-			CoordinateSystem coordinateSystem) {
-		if(coordinateSystem == null || coordinateSystem.getDimension() > 0) {
-			return null;
-		}
-		return coordinateSystem.getAxis(0).getUnit();
-	}
+        // get the measure, if null, no linearization tolerance is available
+        Measure mt = info.getLinearizationTolerance();
+        if (mt == null) {
+            return null;
+        }
 
-	public GridCoverageReader getGridCoverageReader(CoverageInfo info, Hints hints) 
+        // if the user did not specify a unit of measure, we use it as an absolute value
+        if (mt.getUnit() == null) {
+            return mt.doubleValue();
+        }
+
+        // should not happen, but let's cover all our bases
+        CoordinateReferenceSystem crs = info.getCRS();
+        if (crs == null) {
+            return mt.doubleValue();
+        }
+
+        // let's get the target unit
+        SingleCRS horizontalCRS = CRS.getHorizontalCRS(crs);
+        Unit targetUnit;
+        if (horizontalCRS != null) {
+            // leap of faith, the first axis is an horizontal one (
+            targetUnit = getFirstAxisUnit(horizontalCRS.getCoordinateSystem());
+        } else {
+            // leap of faith, the first axis is an horizontal one (
+            targetUnit = getFirstAxisUnit(crs.getCoordinateSystem());
+        }
+
+        if ((targetUnit != null && targetUnit == NonSI.DEGREE_ANGLE)
+                || horizontalCRS instanceof GeographicCRS || crs instanceof GeographicCRS) {
+            // assume we're working against a type of geographic crs, must estimate the degrees
+            // equivalent
+            // to the measure, we are going to use a very rough estimate (cylindrical earth model)
+            // TODO: maybe look at the layer bbox and get a better estimate computed at the center
+            // of the bbox
+            UnitConverter converter = mt.getUnit().getConverterTo(SI.METER);
+            double tolMeters = converter.convert(mt.doubleValue());
+            return tolMeters * OGC_METERS_TO_DEGREES;
+        } else if (targetUnit != null && targetUnit.isCompatible(SI.METER)) {
+            // ok, we assume the target is not a geographic one, but we might
+            // have to convert between meters and feet maybe
+            UnitConverter converter = mt.getUnit().getConverterTo(targetUnit);
+            return converter.convert(mt.doubleValue());
+        } else {
+            return mt.doubleValue();
+        }
+
+    }
+
+    private Unit<?> getFirstAxisUnit(CoordinateSystem coordinateSystem) {
+        if (coordinateSystem == null || coordinateSystem.getDimension() > 0) {
+            return null;
+        }
+        return coordinateSystem.getAxis(0).getUnit();
+    }
+
+    public GridCoverageReader getGridCoverageReader(CoverageInfo info, Hints hints)
             throws IOException {
         return getGridCoverageReader(info, (String) null, hints); 
     }
@@ -1711,6 +1744,11 @@ public class ResourcePool {
                 if ( style == null ) {
                     style = dataDir().parsedStyle(info);
 
+                    if (style == null) {
+                        throw new ServiceException("Could not extract a UserStyle definition from "
+                                + info.getName());
+                    }
+
                     // remove this when wms works off style info
                     style.setName( info.getName() );
                     styleCache.put( info, style );
@@ -1933,27 +1971,52 @@ public class ResourcePool {
         protected void dispose(String key, FeatureType featureType) {
             String id = key.substring(0, key.indexOf(PROJECTION_POLICY_SEPARATOR));
         	FeatureTypeInfo info = catalog.getFeatureType(id);
-            LOGGER.info( "Disposing feature type '" + info.getName() + "'");
-            fireDisposed(info, featureType);
+            if(info != null){
+                LOGGER.fine( "Disposing feature type '" + info.getName() + "'/" + id);
+                fireDisposed(info, featureType);
+                if (null != featureTypeAttributeCache.remove(id)) {
+                    LOGGER.fine("AttributeType cache cleared for feature type '" + info.getName()
+                            + "'/" + id + " as a side effect of its cache disposal");
+                }
+            }
         }
     }
-    
+    /**
+     * Custom CatalogResourceCache responsible for disposing
+     * of DataAccess instances (allowing the recovery of operating
+     * system resources).
+     * 
+     * @see ResourcePool#dataStoreCache
+     */
+    @SuppressWarnings("rawtypes")
     class DataStoreCache extends CatalogResourceCache<String, DataAccess> {
-    	
-        protected void dispose(String id, DataAccess da) {
-        	DataStoreInfo info = catalog.getDataStore(id);
-        	String name = null;
-        	if(info != null) {
-	            name = info.getName();
-	            LOGGER.info( "Disposing datastore '" + name + "'" );
-	            
-	            fireDisposed(info, da);
-        	}
-            
+        /**
+         * Ensure data access entry is removed from catalog, and
+         * ensure DataAccess dispose is called to return system resources.
+         * <p>
+         * This method is used when cleaning up a weak reference and
+         * will immediately dispose of the indicated dataAccess.
+         * 
+         * @param id DataStore id, or null if not known
+         * @param dataAccess DataAccess to dispose 
+         */
+        protected void dispose(String id, final DataAccess dataAccess) {
+            DataStoreInfo info = catalog.getDataStore(id);
+            final String name;
+            if (info != null) {
+                name = info.getName();
+                LOGGER.fine("Disposing datastore '" + name + "'");
+                fireDisposed(info, dataAccess);
+            }
+            else {
+                name = "Untracked";
+            }
+            final String implementation = dataAccess.getClass().getSimpleName();
             try {
-                da.dispose();
+                LOGGER.fine("Dispose data access '" + name + "' "+implementation);
+                dataAccess.dispose();
             } catch( Exception e ) {
-                LOGGER.warning( "Error occured disposing datastore '" + name + "'");
+                LOGGER.warning( "Error occured disposing data access '" + name + "' "+implementation );
                 LOGGER.log(Level.FINE, "", e );
             }
         }
@@ -1965,7 +2028,7 @@ public class ResourcePool {
         	CoverageStoreInfo info = catalog.getCoverageStore(id);
         	if(info != null) {
                 String name = info.getName();
-                LOGGER.info( "Disposing coverage store '" + name + "'" );
+                LOGGER.fine( "Disposing coverage store '" + name + "'" );
                 
                 fireDisposed(info, reader);
             }
@@ -1985,7 +2048,7 @@ public class ResourcePool {
         	CoverageStoreInfo info = catalog.getCoverageStore(key.id);
         	if(info != null) {
                 String name = info.getName();
-                LOGGER.info( "Disposing coverage store '" + name + "'" );
+                LOGGER.fine( "Disposing coverage store '" + name + "'" );
                 
                 fireDisposed(info, reader);
             }
@@ -2084,7 +2147,12 @@ public class ResourcePool {
         }
 
         public void handleRemoveEvent(CatalogRemoveEvent event) {
-            event.getSource().accept( this );
+            CatalogInfo source = event.getSource();
+            source.accept(this);
+
+            if (source instanceof FeatureTypeInfo) {
+                flushDataStore((FeatureTypeInfo) source);
+            }
         }
 
         public void reloaded() {
@@ -2115,7 +2183,15 @@ public class ResourcePool {
             clear(style);
         }
     }
-    
+    /**
+     * Used to clean up any outstanding data store listeners.
+     * <p>
+     * The DataStore is still active as the listeners are called allowing
+     * any required clean up to occur.
+     * 
+     * @param dataStoreInfo 
+     * @param da Data access 
+     */
     void fireDisposed(DataStoreInfo dataStore, DataAccess da) {
         for (Listener l : listeners) {
             try {
@@ -2178,4 +2254,72 @@ public class ResourcePool {
 
     
     
+    /**
+     * Flush the feature type held by the data store associated with a FeatureTypeInfo to be safe in
+     * case the underlying schema has changed.
+     * 
+     * <p>
+     * Implementation note: so far this method only works with {@link ContentDataStore} instances
+     * (i.e. all JDBC ones and others, but not all). This is to avoid calling
+     * {@link DataStore#dispose()} as other threads may be using it and has proved to result in
+     * unpredictable errors. Instead, we're calling the datastore feature type's
+     * {@link ContentState#flush()} method which forces re-loading the native type when next used.
+     */
+    protected void flushDataStore(FeatureTypeInfo ft) {
+        DataStoreInfo ds = ft.getStore();
+        if (ds == null) {
+            return;
+        }
+        if (!dataStoreCache.containsKey(ds.getId())) {
+            return; // don't bother if DataStore not cached            
+        }
+        DataAccess<?, ?> dataStore;
+        try {
+            dataStore = getDataStore(ds);
+        } catch (IOException e) {
+            LOGGER.log(Level.WARNING, "Unable to obtain data store '" + ft.getQualifiedNativeName()+"' to flush", e);
+            return;
+        }
+        final int dsFtCount = countFeatureTypesOf(ds);
+        if (dsFtCount == 0) {
+            // clean up cached DataAccess if no longer in use
+            LOGGER.log(Level.FINE, "Feature Type {0} cleared: Disposing DataStore {1} - {2}",
+                    new String[] { ft.getName(), ds.getName(), "Last Feature Type Disposed" });
+            clear(ds);
+        } else {
+            if (dataStore instanceof ContentDataStore) {
+                ContentDataStore contentDataStore = (ContentDataStore) dataStore;
+                try {
+                    // ask ContentDataStore to forget cached column information
+                    String nativeName = ft.getNativeName();
+                    if (nativeName != null) {
+                        flushState(contentDataStore, nativeName);
+                        LOGGER.log(Level.FINE,
+                                "Feature Type {0} cleared from ContentDataStore {1}", new String[] {
+                                        ft.getName(), ds.getName() });
+                    }
+                } catch (Exception e) {
+                    LOGGER.log(Level.WARNING, "Unable to flush '" + ft.getQualifiedNativeName(), e);
+                }
+            } else {
+                LOGGER.log(
+                    Level.FINE,
+                    "Unable to clean up cached feature type {0} in data store {1} - not a ContentDataStore",
+                    new String[] { ft.getName(), ds.getName() });
+            }
+        }
+    }
+
+    private int countFeatureTypesOf(DataStoreInfo ds) {
+        Filter filter = Predicates.equal("store.id", ds.getId());
+        int dsTypeCount = catalog.count(FeatureTypeInfo.class, filter);
+        return dsTypeCount;
+    }
+
+    private void flushState(ContentDataStore contentDataStore, String nativeName)
+            throws IOException {
+        ContentFeatureSource featureSource;
+        featureSource = contentDataStore.getFeatureSource(nativeName);
+        featureSource.getState().flush();
+    }
 }

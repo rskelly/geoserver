@@ -1,4 +1,5 @@
-/* Copyright (c) 2001 - 2013 OpenPlans - www.openplans.org. All rights reserved.
+/* (c) 2014 Open Source Geospatial Foundation - all rights reserved
+ * (c) 2001 - 2013 OpenPlans
  * This code is licensed under the GPL 2.0 license, available at the root
  * application directory.
  */
@@ -23,6 +24,7 @@ import net.sf.json.JSONArray;
 import net.sf.json.JSONObject;
 import net.sf.json.util.JSONBuilder;
 
+import org.apache.commons.lang.SystemUtils;
 import org.custommonkey.xmlunit.SimpleNamespaceContext;
 import org.custommonkey.xmlunit.XMLUnit;
 import org.geoserver.catalog.CascadeDeleteVisitor;
@@ -32,6 +34,7 @@ import org.geoserver.catalog.FeatureTypeInfo;
 import org.geoserver.catalog.LayerInfo;
 import org.geoserver.catalog.StoreInfo;
 import org.geoserver.catalog.StyleInfo;
+import org.geoserver.catalog.PublishedType;
 import org.geoserver.catalog.WorkspaceInfo;
 import org.geoserver.data.test.SystemTestData;
 import org.geoserver.test.GeoServerSystemTestSupport;
@@ -123,7 +126,7 @@ public abstract class ImporterTestSupport extends GeoServerSystemTestSupport {
         assertNotNull(layer.getDefaultStyle());
         assertNotNull(layer.getResource().getProjectionPolicy());
         
-        if (layer.getType() == LayerInfo.Type.VECTOR) {
+        if (layer.getType() == PublishedType.VECTOR) {
             FeatureTypeInfo featureType = (FeatureTypeInfo) layer.getResource();
             FeatureSource source = featureType.getFeatureSource(null, null);
             assertTrue(source.getCount(Query.ALL) > 0);
@@ -251,5 +254,10 @@ public abstract class ImporterTestSupport extends GeoServerSystemTestSupport {
             return JSONObject.fromObject( ((StringWriter) writer).toString() );
         }
         
+    }
+    
+    @Override
+    protected boolean isMemoryCleanRequired() {
+        return SystemUtils.IS_OS_WINDOWS;
     }
 }

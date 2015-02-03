@@ -1,4 +1,5 @@
-/* Copyright (c) 2001 - 2013 OpenPlans - www.openplans.org. All rights reserved.
+/* (c) 2014 Open Source Geospatial Foundation - all rights reserved
+ * (c) 2001 - 2013 OpenPlans
  * This code is licensed under the GPL 2.0 license, available at the root
  * application directory.
  */
@@ -37,6 +38,7 @@ import org.geoserver.catalog.FeatureTypeInfo;
 import org.geoserver.catalog.LayerInfo;
 import org.geoserver.catalog.NamespaceInfo;
 import org.geoserver.catalog.ResourceInfo;
+import org.geoserver.catalog.PublishedType;
 import org.geoserver.catalog.impl.CatalogImpl;
 import org.geoserver.config.GeoServer;
 import org.geoserver.monitor.BBoxAsserts;
@@ -426,7 +428,7 @@ public class MonitorCallbackTest {
         
         LayerInfo l = createMock(LayerInfo.class);
         expect(l.getResource()).andReturn(r);
-        expect(l.getType()).andReturn(LayerInfo.Type.VECTOR);
+        expect(l.getType()).andReturn(PublishedType.VECTOR);
         replay(l);
         
         return new MapLayerInfo(l);

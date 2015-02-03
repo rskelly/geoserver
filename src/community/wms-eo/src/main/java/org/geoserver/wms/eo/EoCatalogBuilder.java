@@ -1,4 +1,5 @@
-/* Copyright (c) 2013 OpenPlans - www.openplans.org. All rights reserved.
+/* (c) 2014 Open Source Geospatial Foundation - all rights reserved
+ * (c) 2013 OpenPlans
  * This code is licensed under the GPL 2.0 license, available at the root
  * application directory.
  */
@@ -31,6 +32,7 @@ import org.geoserver.catalog.LayerGroupInfo;
 import org.geoserver.catalog.LayerInfo;
 import org.geoserver.catalog.NamespaceInfo;
 import org.geoserver.catalog.PublishedInfo;
+import org.geoserver.catalog.PublishedType;
 import org.geoserver.catalog.ResourceInfo;
 import org.geoserver.catalog.StoreInfo;
 import org.geoserver.catalog.StyleInfo;
@@ -344,7 +346,7 @@ public class EoCatalogBuilder implements EoStyles {
             layer.setTitle(layerName);
             layer.setEnabled(true);
             layer.setQueryable(true);
-            layer.setType(LayerInfo.Type.VECTOR);
+            layer.setType(PublishedType.VECTOR);
             layer.getMetadata().put(EoLayerType.KEY, EoLayerType.COVERAGE_OUTLINE.name());
             addEoStyles(layer, DEFAULT_OUTLINE_STYLE);
             catalog.add(layer);
@@ -468,7 +470,7 @@ public class EoCatalogBuilder implements EoStyles {
             layer.setTitle(name);
             layer.setEnabled(true);
             layer.setQueryable(true);
-            layer.setType(LayerInfo.Type.RASTER);
+            layer.setType(PublishedType.RASTER);
             layer.getMetadata().put(EoLayerType.KEY, type.name());
             catalog.add(layer);
 

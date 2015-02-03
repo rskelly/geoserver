@@ -1,4 +1,5 @@
-/* Copyright (c) 2001 - 2013 OpenPlans - www.openplans.org. All rights reserved.
+/* (c) 2014 Open Source Geospatial Foundation - all rights reserved
+ * (c) 2001 - 2013 OpenPlans
  * This code is licensed under the GPL 2.0 license, available at the root
  * application directory.
  */
@@ -87,7 +88,9 @@ public class StyleEditPage extends AbstractStylePage {
         // write out the file and save name modifications
         try {
             StyleInfo style = (StyleInfo) styleForm.getModelObject();
-            Version version = Styles.handler(formatChoice.getModelObject()).version(rawStyle);
+            String format = formatChoice.getModelObject();
+            style.setFormat(format);
+            Version version = Styles.handler(format).version(rawStyle);
             style.setSLDVersion(version);
             
             // write out the SLD

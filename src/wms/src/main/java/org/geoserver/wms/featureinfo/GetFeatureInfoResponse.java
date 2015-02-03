@@ -1,4 +1,5 @@
-/* Copyright (c) 2001 - 2014 OpenPlans - www.openplans.org. All rights reserved.
+/* (c) 2014 Open Source Geospatial Foundation - all rights reserved
+ * (c) 2001 - 2014 OpenPlans
  * This code is licensed under the GPL 2.0 license, available at the root
  * application directory.
  */
@@ -129,5 +130,14 @@ public class GetFeatureInfoResponse extends Response {
         
         return format;
 
+    }
+    
+    @Override
+    public String getCharset(Operation operation) {
+        Assert.notNull(operation, "operation is null");
+        GetFeatureInfoRequest request = (GetFeatureInfoRequest) OwsUtils.parameter(
+                operation.getParameters(), GetFeatureInfoRequest.class);
+        GetFeatureInfoOutputFormat outputFormat = getRequestedOutputFormat(request);
+        return outputFormat.getCharset();
     }
 }

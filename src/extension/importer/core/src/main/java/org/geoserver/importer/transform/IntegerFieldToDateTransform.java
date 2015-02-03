@@ -1,4 +1,5 @@
-/* Copyright (c) 2001 - 2013 OpenPlans - www.openplans.org. All rights reserved.
+/* (c) 2014 Open Source Geospatial Foundation - all rights reserved
+ * (c) 2001 - 2013 OpenPlans
  * This code is licensed under the GPL 2.0 license, available at the root
  * application directory.
  */
@@ -39,7 +40,7 @@ public class IntegerFieldToDateTransform extends AttributeRemapTransform {
     @Override
     public SimpleFeature apply(ImportTask task, DataStore dataStore, SimpleFeature oldFeature,
             SimpleFeature feature) throws Exception {
-        Object val = feature.getAttribute(field);
+        Object val = oldFeature.getAttribute(field);
         Date parsed = null;
         if (val instanceof String) {
             String s = ((String) val).trim();

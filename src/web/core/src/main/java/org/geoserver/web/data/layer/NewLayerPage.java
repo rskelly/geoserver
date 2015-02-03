@@ -1,4 +1,5 @@
-/* Copyright (c) 2001 - 2013 OpenPlans - www.openplans.org. All rights reserved.
+/* (c) 2014 Open Source Geospatial Foundation - all rights reserved
+ * (c) 2001 - 2013 OpenPlans
  * This code is licensed under the GPL 2.0 license, available at the root
  * application directory.
  */
@@ -32,6 +33,7 @@ import org.geoserver.catalog.ResourceInfo;
 import org.geoserver.catalog.StoreInfo;
 import org.geoserver.catalog.WMSLayerInfo;
 import org.geoserver.catalog.WMSStoreInfo;
+import org.geoserver.feature.retype.RetypingDataStore;
 import org.geoserver.web.CatalogIconFactory;
 import org.geoserver.web.ComponentAuthorizer;
 import org.geoserver.web.GeoServerSecuredPage;
@@ -45,6 +47,7 @@ import org.geoserver.web.wicket.ParamResourceModel;
 import org.geoserver.web.wicket.SimpleAjaxLink;
 import org.geotools.data.DataAccess;
 import org.geotools.data.DataStore;
+import org.geotools.data.wfs.WFSDataStore;
 import org.geotools.data.wms.WebMapServer;
 import org.geotools.jdbc.JDBCDataStore;
 
@@ -66,6 +69,7 @@ public class NewLayerPage extends GeoServerSecuredPage {
     private WebMarkupContainer createTypeContainer;
     private WebMarkupContainer createSQLViewContainer;
     private WebMarkupContainer createCoverageViewContainer;
+    private WebMarkupContainer createCascadedWFSStoredQueryContainer;
     private WebMarkupContainer createWMSLayerImportContainer;
     
     public NewLayerPage() {
@@ -149,7 +153,12 @@ public class NewLayerPage extends GeoServerSecuredPage {
         createCoverageViewContainer.setVisible(false);
         createCoverageViewContainer.add(newCoverageViewLink());
         selectLayersContainer.add(createCoverageViewContainer);
-
+        
+        createCascadedWFSStoredQueryContainer = new WebMarkupContainer("createCascadedWFSStoredQueryContainer");
+        createCascadedWFSStoredQueryContainer.setVisible(false);
+        createCascadedWFSStoredQueryContainer.add(newCascadedWFSStoredQueryLink());
+        selectLayersContainer.add(createCascadedWFSStoredQueryContainer);
+        
         createWMSLayerImportContainer = new WebMarkupContainer("createWMSLayerImportContainer");
         createWMSLayerImportContainer.setVisible(false);
         createWMSLayerImportContainer.add(newWMSImportLink());
@@ -198,6 +207,18 @@ public class NewLayerPage extends GeoServerSecuredPage {
         };
     }
     
+    Component newCascadedWFSStoredQueryLink() {
+        return new AjaxLink("createCascadedWFSStoredQuery") {
+
+            @Override
+            public void onClick(AjaxRequestTarget target) {
+                DataStoreInfo ds = getCatalog().getStore(storeId, DataStoreInfo.class);
+                PageParameters pp = new PageParameters("wsName=" + ds.getWorkspace().getName() + ",storeName=" + ds.getName());
+                setResponsePage(CascadedWFSStoredQueryNewPage.class, pp);
+            }
+        };
+    }
+
     Component newWMSImportLink() {
         return new AjaxLink("createWMSImport") {
             
@@ -275,10 +296,16 @@ public class NewLayerPage extends GeoServerSecuredPage {
         // reset to default first, to avoid the container being displayed if store is not a
         // DataStoreInfo
         createSQLViewContainer.setVisible(false);
+        createCascadedWFSStoredQueryContainer.setVisible(false);
         if (store instanceof DataStoreInfo) {
             try {
                 DataAccess da = ((DataStoreInfo) store).getDataStore(null);
+
                 createSQLViewContainer.setVisible(da instanceof JDBCDataStore);
+                
+                if (da instanceof WFSDataStore) {
+                    createCascadedWFSStoredQueryContainer.setVisible(((WFSDataStore)da).supportsStoredQueries());
+                }
             } catch (IOException e) {
                 LOGGER.log(Level.FINEST, e.getMessage());
             }
